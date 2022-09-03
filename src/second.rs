@@ -1,78 +1,93 @@
-use std::mem;
+// use std::collections::binary_heap::Iter;
 
-/* 
-    1.但是这样不能避免额外的junk存储开销，也不能有统一的内存分配(enum的两种名称大小不一样)
-      还不能利用Rust的enum中特有的null pointer优化（一个字段是A，另一个字段B中只包含了一个非空指针），形如：
-            enum Foo { A, B(ContainsANonNullPtr) }
-*/
-// pub enum List {
+pub struct List<T> {
+    head: Link<T>,
+}
+// enum Link {
 //     Empty,
-//     Elem(i32, Box<List>)
+//     More(Box<Node>)
 // }
-
-/* 
-    2.尝试设计成头指针，想让List变public而让Node变private，但是Rust的enum要求起内部必须全是共有的
-*/
-// struct Node {
-//     elem: i32,
-//     next: List,
-// }
-
-// pub enum List {
-//     Empty,
-//     More(Box<Node>),
-// }
-
-/* 
-    3.接上条，只能把enum改成一个嵌套enum的struct，让List编程public
-*/
-pub struct List {
-    head: Link,
-}
-enum Link {     // 在More字段中只有一个非空指针，符合Rust enum中的null pointer优化
-    Empty,
-    More(Box<Node>)
-}
-struct Node {
-    elem: i32,
-    next: Link
+type Link<T> = Option<Box<Node<T>>>; // 使用更简洁的Option，并且可以使用更加方便的take()，map()等函数
+struct Node<T> {
+    elem: T,
+    next: Link<T>
 }
 
-impl List {
+impl<T> List<T> {
     pub fn new() -> Self {
-        Self { head: Link::Empty }
+        Self { head: None }
     }
 
-    pub fn push(&mut self, elem: i32) {
+    pub fn push(&mut self, elem: T) {
         let new_node = Node {
             elem: elem,
-            next: mem::replace(&mut self.head, Link::Empty), // self.head需要copy，只能用mem::replace
+            next: self.head.take(),     // take()可以直接取出Some中的值，并且留下None
             // https://doc.rust-lang.org/std/mem/fn.replace.html
         };
 
-        self.head = Link::More(Box::new(new_node));
+        self.head = Some(Box::new(new_node));
     }
 
-    pub fn pop(&mut self) -> Option<i32> {
-        match mem::replace(&mut self.head, Link::Empty) {   // 不能直接把node.elem移出去
-            Link::Empty => None,
-            Link::More(node) => {
-                self.head = node.next;
-                Some(node.elem)
-            }
-        }
-        // unimplemented!()
+    pub fn pop(&mut self) -> Option<T> {
+        self.head.take().map(|node| {   // Option的map()方法是可以把Some(x)变成Some(y)，并且可以改变内部类型
+            self.head = node.next;
+            node.elem
+        })
+    }
+
+    pub fn peek(&self) -> Option<&T> {
+        self.head.as_ref().map(|node| {
+            &node.elem
+        })
+    }
+
+    pub fn peek_mut(&mut self) -> Option<&mut T> {
+        self.head.as_mut().map(|node| {
+            &mut node.elem
+        })
     }
 }
 
-impl Drop for List {    // Box不满足tail-recursive形式的drop，只能手动为List实现iterative drop
+impl<T> Drop for List<T> {    // Box不满足tail-recursive形式的drop，只能手动为List实现iterative drop
     fn drop(&mut self) {
-        let mut cur_link = mem::replace(&mut self.head, Link::Empty);
-        while let Link::More(mut boxed_node) = cur_link {
-            cur_link = mem::replace(&mut boxed_node.next, Link::Empty); // 为每个next置空
+        let mut cur_link: Link<T> = self.head.take();
+        while let Some(mut boxed_node) = cur_link {
+            cur_link = boxed_node.next.take();
         }
     }
 }
+
+pub struct IntoIter<T>(List<T>);
+impl<T> List<T> {
+    pub fn into_iter(self) -> IntoIter<T> {
+        IntoIter(self)
+    }
+}
+impl<T> Iterator for IntoIter<T> {
+    type Item = T;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.pop()
+    }
+}
+pub struct Iter<'a, T> {
+    next: Option<&'a Node<T>>,
+}
+impl<T> List<T> {
+    pub fn iter<'a>(&'a self) -> Iter<'a, T> {
+        Iter {
+            next: self.head.as_deref(),
+        }
+    }
+}
+impl<'a, T> Iterator for Iter<'a, T> {
+    type Item = &'a T;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.next.map(|node| {
+            self.next = node.next.as_deref();
+            &node.elem
+        })
+    }
+}    
 
 mod test {
     use super::List;
@@ -92,5 +107,33 @@ mod test {
         assert_eq!(list.pop(), Some(4));
         assert_eq!(list.pop(), Some(1));
         assert_eq!(list.pop(), None);
+    }
+    #[test]
+    fn peek() {
+        let mut list = List::new();
+        assert_eq!(list.peek(), None);
+        assert_eq!(list.peek_mut(), None);
+        list.push(1); list.push(2); list.push(3);
+        assert_eq!(list.peek(), Some(&3));
+        assert_eq!(list.peek_mut(), Some(&mut 3));
+        
+        // peek_mut
+        list.peek_mut().map(|value| {
+            *value = 42
+        });
+        assert_eq!(list.peek(), Some(&42));
+        assert_eq!(list.pop(), Some(42));            
+    }
+    #[test]
+    fn into_iter() {
+        let mut list = List::new();
+        list.push(1);
+        list.push(2);
+        list.push(3);
+        let mut iter = list.into_iter();
+        assert_eq!(iter.next(), Some(3));
+        assert_eq!(iter.next(), Some(2));
+        assert_eq!(iter.next(), Some(1));
+        assert_eq!(iter.next(), None);
     }
 }
