@@ -1,3 +1,4 @@
+/* A Bad Single-Linked Stack */
 use std::mem;
 
 /* 

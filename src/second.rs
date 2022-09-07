@@ -1,4 +1,4 @@
-// use std::collections::binary_heap::Iter;
+/* An Ok Single-Linked Stack */
 
 pub struct List<T> {
     head: Link<T>,
