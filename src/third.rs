@@ -1,4 +1,10 @@
 /* A Persistent Singly-Linked Stack */
+
+/* 
+    We can use Arc instead of Rc to make it thread safety.
+    Almost every type is Send and Sync. Send is safe to move and Sync is safe to share. If T is Sync, &T is Send.
+    Cells only works in a single-threaded while Rc is, locks work in a multi-threaded context while Arc is.
+*/
 use std::rc::Rc;
 pub struct List<T> {
     head: Link<T>,
