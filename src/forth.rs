@@ -55,6 +55,15 @@ impl<T> List<T> {
         })
     }
 }
+impl<T> Drop for List<T> {
+    fn drop(&mut self) {
+        /*  Rc can't deal with cycles, and doubly-linked list is just a big chain of tiny cycles.
+            When we drop our list, the head and tail node will both have a refcount of 1. 
+            So we need to manually drop our list.
+            Actually, we can just pop all the elements rather than removing elements one by one. */
+        while self.pop_front().is_some() {}
+    }
+}
 
 type Link<T> = Option<Rc<RefCell<Node<T>>>>;
 
@@ -94,7 +103,7 @@ mod test {
 
         assert_eq!(list.pop_front(), Some(5));
         assert_eq!(list.pop_front(), Some(4));
-       
+
 
         assert_eq!(list.pop_front(), Some(1));
         assert_eq!(list.pop_front(), None);
