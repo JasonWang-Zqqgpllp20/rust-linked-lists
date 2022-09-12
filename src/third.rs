@@ -57,6 +57,7 @@ impl<T> Drop for List<T> {
         let mut head = self.head.take();
         while let Some(node) = head {
             if let Ok(mut node) = Rc::try_unwrap(node) {
+                // Rc::try_unwrap() moves out the contents of an Rc if its refcount is 1.
                 head = node.next.take();
             } else {
                 break;
